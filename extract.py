@@ -13,6 +13,106 @@ header = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36 Edge/16.16299'
 }
 
+
+# 获得url的base_url
+def get_base_url(url:str)->str:
+    #有http https
+
+    pattern = re.compile(r'(http://|https://)(.*?)/')
+
+    base_url = pattern.search(url).group(1) + pattern.search(url).group(2)+"/"
+
+    return base_url
+    
+
+# search关键词,是否包含关键词，包含则返回True
+def keyword(text:str)->bool:
+    
+    # 关键词列表
+    list = ["油变","油浸","10KV","35KV","220KV","落后产能淘汰","主变","中性点","整流变","配电变压器","低压变压器","高压变压器","配变","电力变压器","变压器","厂用变","66KV","开关柜","环网柜","中置柜","高压柜","低压柜","变电站","配电柜","调压变压器","节能变压器","箱变","电气柜数据"]
+
+    # 如果list里的关键词在text里，则返回True
+    for i in list:
+        if i in text:
+            return True
+            
+    return False
+        
+
+# 过滤关键词,是否包含关键词，包含则返回True
+def filter_keyword(text:str)->bool:
+    
+     # 废弃关键词列表     
+    list =["s"]
+    
+    for i in list:
+        if i in text:
+            return True
+    return False
+
+#  时间范围,是否在时间范围内,在则返回True,不在则返回False
+def time_range(date):     
+    date_interval = 10     
+    current_date = datetime.now().date()     
+    target_date = date     
+    if target_date < current_date - timedelta(days=date_interval):         
+        return False    
+    return True 
+
+# 匹配关键字，有效信息返回True
+def judge_content(text:str)->bool:
+    
+    # 是否包含关键词，不包含filter_keyword
+    if keyword(text):
+        if not filter_keyword(text):
+            return True
+
+    return False
+
+
+
+# 从mysql数据库获取url
+def urls_from_mysql()->List[str]:
+
+        host = '127.0.0.1'      
+        user = 'root'      
+        password = '123456'      
+        database = 'ceeg'     
+   
+        connection = pymysql.connect(         host=host,         user=user,         password=password,         database=database     )     
+        
+        cursor = connection.cursor()
+
+        sql = "select root_url from url_params_test_more where id < 15000"  
+        cursor.execute(sql)    
+        urls = cursor.fetchall()
+
+        cursor.close()
+        connection.close()
+
+        return urls
+
+#  获取网页源码 get请求
+def get_response(url:str)->requests.models.Response:
+    response = requests.get(url, headers=header)   
+    response.encoding = 'utf-8'  # 设置编码格式为utf-8
+    return response
+
+#  从文本中提取标题
+def find_title(text):          
+    title=re.findall('<title>(.+)</title>',text)          
+    return title
+
+# 添加http
+def start_http(baseurl,url):         
+    if url.startswith("http"):             
+        return url        
+    else:   
+        if url.startswith("/"):  
+            return baseurl + url[1:]   
+        else:
+            return baseurl + url
+
 #  替换字符串
 def replace_str(source_str:str, regex:str, replace_str = '')->str:         
      
@@ -138,52 +238,6 @@ def cal_item_std(children:List[Tag])->float:
     return num
 
 
-
-#  获取网页源码 get请求
-def get_response(url:str)->requests.models.Response:
-    response = requests.get(url, headers=header)   
-    response.encoding = 'utf-8'  # 设置编码格式为utf-8
-    return response
-
-
-# 从mysql数据库获取url
-def urls_from_mysql()->List[str]:
-
-        host = '127.0.0.1'      
-        user = 'root'      
-        password = '123456'      
-        database = 'ceeg'     
-   
-        connection = pymysql.connect(         host=host,         user=user,         password=password,         database=database     )     
-        
-        cursor = connection.cursor()
-
-        sql = "select root_url from url_params_test_more where id < 15000"  
-        cursor.execute(sql)    
-        urls = cursor.fetchall()
-
-        cursor.close()
-        connection.close()
-
-        return urls
-
-
-#  从文本中提取标题
-def find_title(text):          
-    title=re.findall('<title>(.+)</title>',text)          
-    return title
-
-# 添加http
-def start_http(baseurl,url):         
-    if url.startswith("http"):             
-        return url        
-    else:   
-        if url.startswith("/"):  
-            return baseurl + url[1:]   
-        else:
-            return baseurl + url
-
-
 #  解析url
 def parse_url(tag:Tag)->str:
 
@@ -232,24 +286,6 @@ def only_one_date(text:List)->datetime:
     return extracted_date
 
 
-# parser.parse
-def many_date(text)->datetime:      
-    
-    extracted_date = []    
-    for key in text:                  
-        if(len(key) > 2):             
-            try:                 
-                extracted_date.append(parser.parse(key, fuzzy=False).date())    
-
-            except:                 
-                pass      
-       
-     # 返回最靠近目前时间的日期         
-    now = datetime.now()        
-    return min(extracted_date, key=lambda x: abs(x - now))
-
-
-
 def remove_chinese_characters(text:List[str])->List[str]:     
     chinese_punctuation_pattern = r'[\u3000-\u303F\uFF01-\uFF0F\uFF1A-\uFF20\uFF3B-\uFF40\uFF5B-\uFF65]'  
    
@@ -271,7 +307,6 @@ def remove_chinese_characters(text:List[str])->List[str]:
             new_text.append(item)
     
     return new_text
-
 
 
 # 正则匹配日期   年月日
@@ -314,7 +349,6 @@ def re_dates(text:str)->datetime:
             return datetime.strptime(f"{year}-{month}-{day}", "%Y-%m-%d").date()           
         
 
-
 #  解析日期，title
 def parse_date(tag:Tag)->datetime:
 
@@ -345,61 +379,6 @@ def parse_date(tag:Tag)->datetime:
 
 
 
-# 获得url的base_url
-def get_base_url(url:str)->str:
-    #有http https
-
-    pattern = re.compile(r'(http://|https://)(.*?)/')
-
-    base_url = pattern.search(url).group(1) + pattern.search(url).group(2)+"/"
-
-    return base_url
-    
-
-# search关键词,是否包含关键词，包含则返回True
-def keyword(text:str)->bool:
-    
-    # 关键词列表
-    list = ["油变","油浸","10KV","35KV","220KV","落后产能淘汰","主变","中性点","整流变","配电变压器","低压变压器","高压变压器","配变","电力变压器","变压器","厂用变","66KV","开关柜","环网柜","中置柜","高压柜","低压柜","变电站","配电柜","调压变压器","节能变压器","箱变","电气柜数据"]
-
-    # 如果list里的关键词在text里，则返回True
-    for i in list:
-        if i in text:
-            return True
-            
-    return False
-        
-
-# 过滤关键词,是否包含关键词，包含则返回True
-def filter_keyword(text:str)->bool:
-    
-     # 废弃关键词列表     
-    list =["s"]
-    
-    for i in list:
-        if i in text:
-            return True
-    return False
-
-#  时间范围,是否在时间范围内,在则返回True,不在则返回False
-def time_range(date):     
-    date_interval = 10     
-    current_date = datetime.now().date()     
-    target_date = date     
-    if target_date < current_date - timedelta(days=date_interval):         
-        return False    
-    return True 
-
-# 匹配关键字，有效信息返回True
-def judge_content(text:str)->bool:
-    
-    # 是否包含关键词，不包含filter_keyword
-    if keyword(text):
-        if not filter_keyword(text):
-            return True
-
-    return False
-
 def get_date():
 
     from playwright.sync_api import sync_playwright  
@@ -420,12 +399,7 @@ def get_date():
 
 
 def run():
-        
-        
-        # base_url = get_base_url(url)  # 获得url的base_url
-
-        # response = get_response(url)  # 获取网页源码  
-        
+          
         response = get_date()
         html = re_rules(response)  # 正则处理html  
         soup = BeautifulSoup(html, 'html.parser')  # 创建soup对象  
